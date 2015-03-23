@@ -5,7 +5,7 @@
 
 public Plugin:myinfo = {
 	name = "Burn Damage Fix",
-	author = "[GFL] Roy, That One Guy, KyleS, and [Lickaroo Johnson McPhaley]",
+	author = "[GFL] Roy (Christian Deacon), That One Guy, KyleS, and [Lickaroo Johnson McPhaley]",
 	description = "Slows you down if you're being burned",
 	version = "1.0",
 	url = "GFLClan.com"
