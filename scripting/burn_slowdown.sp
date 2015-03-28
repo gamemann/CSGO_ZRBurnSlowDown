@@ -3,63 +3,70 @@
 #include <sdkhooks>
 #include <zombiereloaded>
 
+#define PL_VERSION "1.1"
+
+/*
+	CHANGELOG:
+	1.0:
+		- Release
+	1.1:
+		- Organized/cleaned code.
+		- Ready for AlliedMods release.
+*/
+
 public Plugin:myinfo = {
 	name = "Burn Damage Fix",
-	author = "[GFL] Roy (Christian Deacon), That One Guy, KyleS, and [Lickaroo Johnson McPhaley]",
+	author = "Roy (Christian Deacon), That One Guy, KyleS, and [Lickaroo Johnson McPhaley]",
 	description = "Slows you down if you're being burned",
-	version = "1.0",
-	url = "GFLClan.com"
+	version = PL_VERSION,
+	url = "GFLClan.com & AlliedMods.net & TheDevelopingCommunity.com"
 };
 
 // ConVars
-new Handle:g_amount = INVALID_HANDLE;
-new Handle:g_amountend = INVALID_HANDLE;
-new Handle:g_enabled = INVALID_HANDLE;
-new Handle:g_time = INVALID_HANDLE;
-new Handle:g_prop = INVALID_HANDLE;
-new Handle:g_movetype = INVALID_HANDLE;
+new Handle:g_hAmount = INVALID_HANDLE;
+new Handle:g_hAmountEnd = INVALID_HANDLE;
+new Handle:g_hEnabled = INVALID_HANDLE;
+new Handle:g_hTime = INVALID_HANDLE;
+new Handle:g_hProp = INVALID_HANDLE;
+new Handle:g_hMoveType = INVALID_HANDLE;
+new Handle:g_hDebug = INVALID_HANDLE;
 
 // ConVar Values
-new Float:f_amount;
-new Float:f_amountend;
-new bool:b_enabled;
-new Float:f_time;
-new String:s_prop[MAX_NAME_LENGTH];
-new bool:b_movetype;
+new Float:g_fAmount;
+new Float:g_fAmountEnd;
+new bool:g_bEnabled;
+new Float:g_fTime;
+new String:g_sProp[MAX_NAME_LENGTH];
+new bool:g_bMoveType;
+new bool:g_bDebug;
 
-// Settings
-new bool:isburning[MAXPLAYERS+1];
-
-// Developer Mode
-new bool:b_debug = false;
+// Other
+new bool:g_bIsBurning[MAXPLAYERS+1];
 
 public OnPluginStart() {
 	// ConVars
-	g_amount = CreateConVar("sm_bsd_amount", "125.0", "The amount to slow the player down?");
-	g_amountend = CreateConVar("sm_bsd_amount_end", "260.0", "What to assign to the prop when the player is done burning.");
-	g_enabled = CreateConVar("sm_bsd_enabled", "1", "Enable this plugin?");
-	g_time = CreateConVar("sm_bsd_time", "5.0", "The time the burn damage lasts for?");
-	g_prop = CreateConVar("sm_bsd_prop", "m_flMaxspeed", "Prop to use to slow down players (don't mess with this unless you know what you're doing).");
-	g_movetype = CreateConVar("sm_bsd_set_movetype", "0", "Set the player's \"movetype\" to 2 while being burned and back to 1 after being burned (only with sm_bsd_prop set to \"m_flStamina\".");
+	g_hAmount = CreateConVar("sm_bsd_amount", "125.0", "The amount to slow the player down?");
+	g_hAmountEnd = CreateConVar("sm_bsd_amount_end", "260.0", "What to assign to the prop when the player is done burning.");
+	g_hEnabled = CreateConVar("sm_bsd_enabled", "1", "Enable this plugin?");
+	g_hTime = CreateConVar("sm_bsd_time", "5.0", "The time the burn damage lasts for?");
+	g_hProp = CreateConVar("sm_bsd_prop", "m_flMaxspeed", "Prop to use to slow down players (don't mess with this unless you know what you're doing).");
+	g_hMoveType = CreateConVar("sm_bsd_set_movetype", "0", "Set the player's \"movetype\" to 2 while being burned and back to 1 after being burned (only with sm_bsd_prop set to \"m_flStamina\".");
+	g_hDebug = CreateConVar("sm_bsd_debug", "0", "Enable debugging for BSD?");
+	
+	// AlliedMods Release
+	CreateConVar("sm_bsd_version", PL_VERSION, "Burn Slow Down's plugin version");
 	
 	// Change these convars!
-	HookConVarChange(g_amount, AmountChange);
-	HookConVarChange(g_amountend, AmountEndChange);
-	HookConVarChange(g_time, TimeChange);
-	HookConVarChange(g_enabled, EnabledChange);
-	HookConVarChange(g_prop, PropChange);
-	HookConVarChange(g_movetype, MoveTypeChange);
-	
-	// Set the values!
-	f_amount = GetConVarFloat(g_amount);
-	f_amountend = GetConVarFloat(g_amountend);
-	b_enabled = GetConVarBool(g_enabled);
-	f_time = GetConVarFloat(g_time);
-	GetConVarString(g_prop, s_prop, sizeof(s_prop));
-	b_movetype = GetConVarBool(g_movetype);
+	HookConVarChange(g_hAmount, CVarChanged);
+	HookConVarChange(g_hAmountEnd, CVarChanged);
+	HookConVarChange(g_hTime, CVarChanged);
+	HookConVarChange(g_hEnabled, CVarChanged);
+	HookConVarChange(g_hProp, CVarChanged);
+	HookConVarChange(g_hMoveType, CVarChanged);
+	HookConVarChange(g_hDebug, CVarChanged);
 	
 	// Auto Execute the config
-	AutoExecConfig(true, "sm_BSD");
+	AutoExecConfig(true, "sm_BurnSlowDown");
 	
 	// Late loading (pointed out by KyleS)
 	for (new i=1; i <= MaxClients; i++) {
@@ -69,107 +76,86 @@ public OnPluginStart() {
 	}
 }
 
-public AmountChange(Handle:convar, const String:oldv[], const String:newv[]) {
-	f_amount = StringToFloat(newv);
+public CVarChanged(Handle:hCVar, const String:sOldV[], const String:sNewV[]) {
+	OnConfigsExecuted();
 }
-
-public AmountEndChange(Handle:convar, const String:oldv[], const String:newv[]) {
-	f_amountend = StringToFloat(newv);
-}
-
-public TimeChange(Handle:convar, const String:oldv[], const String:newv[]) {
-	f_time = StringToFloat(newv);
-}
-
-public EnabledChange(Handle:convar, const String:oldv[], const String:newv[]) {
-	b_enabled = GetConVarBool(g_enabled);
-}
-
-public PropChange(Handle:convar, const String:oldv[], const String:newv[]) {
-	strcopy(s_prop, sizeof(s_prop), newv);
-}
-
-public MoveTypeChange(Handle:convar, const String:oldv[], const String:newv[]) {
-	b_movetype = GetConVarBool(g_movetype);
-}
-
 
 public OnConfigsExecuted() {
 	// Set the values!
-	f_amount = GetConVarFloat(g_amount);
-	b_enabled = GetConVarBool(g_enabled);
-	f_time = GetConVarFloat(g_time);
-	GetConVarString(g_prop, s_prop, sizeof(s_prop));
-	b_movetype = GetConVarBool(g_movetype);
+	g_fAmount = GetConVarFloat(g_hAmount);
+	g_bEnabled = GetConVarBool(g_hEnabled);
+	g_fTime = GetConVarFloat(g_hTime);
+	GetConVarString(g_hProp, g_sProp, sizeof(g_sProp));
+	g_bMoveType = GetConVarBool(g_hMoveType);
+	g_bDebug = GetConVarBool(g_hDebug);
 }
 
-public OnClientPutInServer(client) {
+public OnClientPutInServer(iClient) {
 	// Hook the SDKHook!
-	SDKHook(client, SDKHook_OnTakeDamage, OnTakeDamage);
-	SDKHook(client, SDKHook_PostThink, OnThink);
-	isburning[client] = false;
+	SDKHook(iClient, SDKHook_OnTakeDamage, OnTakeDamage);
+	SDKHook(iClient, SDKHook_PostThink, OnThink);
+	g_bIsBurning[iClient] = false;
 }
 
-public OnClientDisconnect(client) {
-	// Set "isburning" to false for the client.
-	isburning[client] = false;
+public OnClientDisconnect(iClient) {
+	// Reset "g_bIsBurning".
+	g_bIsBurning[iClient] = false;
 }
 
-// SDK Hooks
-public Action:OnTakeDamage(victim, &attacker, &inflictor, &Float:damage, &damagetype) {
-	if (victim > MaxClients || victim <= 0 || !IsClientInGame(victim) || !IsPlayerAlive(victim) || !b_enabled || ZR_IsClientHuman(victim) || !(damagetype & DMG_BURN) || isburning[victim]) {
+public Action:OnTakeDamage(iVictim, &attacker, &inflictor, &Float:damage, &damagetype) {
+	if (iVictim > MaxClients || iVictim <= 0 || !IsClientInGame(iVictim) || !IsPlayerAlive(iVictim) || !g_bEnabled || ZR_IsClientHuman(iVictim) || !(damagetype & DMG_BURN) || g_bIsBurning[iVictim]) {
 		return Plugin_Continue;
 	}
 	
 	// Now set the stamina value!
-	SetEntPropFloat(victim, Prop_Send, s_prop, f_amount);
+	SetEntPropFloat(iVictim, Prop_Send, g_sProp, g_fAmount);
 	// Set the move type to 2 if enabled.
-	if (b_movetype && StrEqual(s_prop, "m_flStamina")) {
-		SetEntProp(victim, Prop_Send, "movetype", 2);	// Two is CS:GO's default, but some servers may set this to "1" due to the increase in knock back (only for the "m_flStamina" prop)
+	if (g_bMoveType && StrEqual(g_sProp, "m_flStamina")) {
+		SetEntProp(iVictim, Prop_Send, "movetype", 2);	// Two is CS:GO's default, but some servers may set this to "1" due to the increase in knock back (only for the "m_flStamina" prop)
 	}
 	
-	isburning[victim] = true;
+	g_bIsBurning[iVictim] = true;
 	
 	// Debug
-	if (b_debug) {
-		PrintToChat(victim, "Burning started (Prop: \"%s\" and Amount: %f)...", s_prop, f_amount);
+	if (g_bDebug) {
+		PrintToChat(iVictim, "Burning started (Prop: \"%s\" and Amount: %f)...", g_sProp, g_fAmount);
 	}
 	
 	// Now Create the timer to disable it.
-	CreateTimer(f_time, DisableSlowDown, victim, TIMER_FLAG_NO_MAPCHANGE);
+	CreateTimer(g_fTime, Timer_DisableSlowDown, iVictim, TIMER_FLAG_NO_MAPCHANGE);
 	
 	return Plugin_Continue;
 }
 
-public OnThink (client) {
-	if (client > 0 && client <= MaxClients && IsClientInGame(client) && isburning[client] && StrEqual(s_prop, "m_flStamina") && !ZR_IsClientHuman(client)) {
-		new Float:i = GetEntPropFloat(client, Prop_Send, "m_flStamina");
+public OnThink (iClient) {
+	if (iClient > 0 && iClient <= MaxClients && IsClientInGame(iClient) && g_bIsBurning[iClient] && StrEqual(g_sProp, "m_flStamina") && !ZR_IsClientHuman(iClient)) {
+		new Float:i = GetEntPropFloat(iClient, Prop_Send, "m_flStamina");
 		
 		if (i <= 0.0) {
 			// Reset the stamina when a player jumps.
-			SetEntPropFloat(client, Prop_Send, s_prop, f_amount);
+			SetEntPropFloat(iClient, Prop_Send, g_sProp, g_fAmount);
 			
 			// Debug
-			if (b_debug) {
-				PrintToChat(client, "You were in the air! Stamina reset (Amount: %f)", f_amount);
+			if (g_bDebug) {
+				PrintToChat(iClient, "You were in the air! Stamina reset (Amount: %f)", g_fAmount);
 			}
 		}
 	}
 }
 
-public Action:DisableSlowDown(Handle:timer, any:victim) {
+public Action:Timer_DisableSlowDown(Handle:hTimer, any:iVictim) {
 	// Just a saftey check.
-	if (IsClientInGame(victim)) {
-		SetEntPropFloat(victim, Prop_Send, s_prop, f_amountend);
+	if (IsClientInGame(iVictim)) {
+		SetEntPropFloat(iVictim, Prop_Send, g_sProp, g_fAmountEnd);
 		// Set move type back to 1
-		if (b_movetype && StrEqual(s_prop, "m_flStamina")) {
-			SetEntProp(victim, Prop_Send, "movetype", 1);
+		if (g_bMoveType && StrEqual(g_sProp, "m_flStamina")) {
+			SetEntProp(iVictim, Prop_Send, "movetype", 1);
 		}
 		
 		// Debug
-		if (b_debug) {
-			PrintToChat(victim, "Burning Ended (Amount End: %f)...", f_amountend);
+		if (g_bDebug) {
+			PrintToChat(iVictim, "Burning Ended (Amount End: %f)...", g_fAmountEnd);
 		}
 	}
-	isburning[victim] = false;
+	g_bIsBurning[iVictim] = false;
 }
